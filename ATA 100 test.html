@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QCM – Complet (Start/Pause/Stop + Timer + Import/Export)</title>
+<style>
+:root{
+  --bg:#18223a;
+  --card:#1d283b;
+  --text:#f3f4f6;
+  --muted:#bfc5ce;
+  --ok:#34d399;
+  --bad:#f87171;
+  --btn:#3b82f6;
+}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:system-ui,Segoe UI,Roboto,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  display:grid;
+  place-items:center;
+  padding:16px;
+}
+.app{
+  width:min(960px,100%);
+  background:var(--card);
+  border-radius:14px;
+  box-shadow:0 8px 30px rgba(0,0,0,.35);
+  padding:18px;
+}
+h1{margin:0 0 8px;font-size:1.2rem;color:var(--muted)}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0 12px;flex-wrap:wrap}
+.tag,.timer{
+  background:#0b1223;
+  border:1px solid #334155;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:.9rem;
+}
+.btn{
+  background:var(--btn);
+  color:#fff;
+  border:none;
+  border-radius:10px;
+  padding:10px 12px;
+  cursor:pointer;
+  font-weight:600;
+}
+.btn[disabled]{opacity:.6;cursor:not-allowed}
+.card{background:#0b1223;border:1px solid #334155;border-radius:12px;padding:16px}
+.q{font-size:1.25rem;font-weight:700;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ✈️ Thème aéronautique moderne (style cockpit de nuit) */
+.opt{
+  background:#0e1625;
+  border:1px solid #3b82f6;
+  border-radius:10px;
+  padding:14px 16px;
+  cursor:pointer;
+  text-align:left;
+  font-size:1.2rem;
+  font-weight:600;
+  color:#dbeafe;
+  line-height:1.4;
+  transition:all 0.15s ease;
+}
+.opt:hover{
+  background:#1e3a8a;
+  color:#ffffff;
+  transform:scale(1.02);
+}
+.opt.correct{
+  background:#064e3b;
+  outline:2px solid var(--ok);
+  color:#d1fae5;
+}
+.opt.wrong{
+  background:#7f1d1d;
+  outline:2px solid var(--bad);
+  color:#fee2e2;
+}
+
+.feedback{min-height:28px;margin-top:10px}
+.muted{color:var(--muted)}
+.pseudo{display:flex;align-items:center;gap:8px}
+.pseudo input{
+  background:#0b1223;
+  border:1px solid #334155;
+  color:var(--text);
+  padding:8px 10px;
+  border-radius:10px;
+  width:180px;
+}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th,td{border-top:1px solid #334155;padding:10px;text-align:left}
+th{color:var(--muted);font-weight:700}
+tbody tr:hover{background:#0e162a}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+
+</head>
+<body>
+  <div class="app">
+    <h1>🧰⚙️✈️ ~Questionnaire ATA 100️~ ✈️⚙🧰 </h1>
+
+    <div class="bar">
+      <div class="tag" id="progress">Question 0/10</div>
+      <div class="tag" id="score">Score : 0</div>
+
+      <div class="pseudo">
+        <input id="pseudoInput" type="text" maxlength="20" placeholder="Pseudo" />
+        <button class="btn" id="pseudoBtn" type="button">Définir</button>
+      </div>
+
+      <div class="tools">
+        <span class="timer" id="timer">⏱️ 5s</span>
+        <button class="btn" id="playPauseBtn" type="button">Start</button>
+        <button class="btn" id="stopRestartBtn" type="button">Stop</button>
+        <button class="btn" id="importBtn" type="button">Importer</button>
+        <button class="btn" id="exportBtn" type="button">Exporter</button>
+        <input id="fileInput" type="file" accept=".json,.csv,.txt" style="display:none" />
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="q" id="question">Clique sur Start pour commencer</p>
+      <div class="grid" id="choices"></div>
+      <div class="feedback" id="feedback"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2 style="margin:0 0 8px;font-size:1.05rem;color:var(--muted)">Tableau des scores</h2>
+      <div class="muted" style="margin-bottom:8px">Enregistré localement sur cet appareil.</div>
+      <table id="scoreTable">
+        <thead>
+          <tr><th>#</th><th>Pseudo</th><th>Score</th><th>Sur</th><th>Date/Heure</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="tools" style="margin-top:8px">
+        <button class="btn" id="clearScores" type="button">Effacer les scores</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ——— Questions (modifie à volonté) ———
+  let QUESTIONS = [
+  { "q": "À quoi correspond l’ATA 28 ?", "choices": ["Engine Indicating","Fuel","Hydraulic Power","Rotor Flight Controls"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 75 ?", "choices": ["Electrical Power","Air","Rotor Drive System","Electrical/Electronic Panels and Multipurpose Components"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 77 ?", "choices": ["Engine Indicating","In-Flight Fuel Dispensing","Information Systems","Oxygen"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 71 ?", "choices": ["Power Plant","Engine Water Injection","Cargo and Accessory Compartments","Standard Practices - Engines"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 45 ?", "choices": ["Diagnostic and Maintenance System","Time Limits / Maintenance Checks","Propellers","Engine Controls"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 29 ?", "choices": ["Tail Rotor Drive System","Air","Hydraulic Power","Integrated Modular Avionics"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 37 ?", "choices": ["Vacuum","Hardware","Pneumatic","Blades & Pylons Folding Device"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 50 ?", "choices": ["Water/Waste","Towing and Taxiing","Cargo and Accessory Compartments","Hardware"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond aux commandes de vol (Flight Controls) ?", "choices": ["ATA 81","ATA 06","ATA 34","ATA 27"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 21 ?", "choices": ["Standard Practices and Structures - General","Standard Practices - Engines","Stabilizers","Air Conditioning and Pressurization"], "answer": 3 },
+  { "q": "Quel chapitre ATA correspond à la boulonnerie/“Hardware” ?", "choices": ["ATA 14","ATA 34","ATA 76","ATA 37"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 44 ?", "choices": ["Water Ballast","Placards and Markings","Cabin Systems","Electrical Power"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 10 ?", "choices": ["Parking, Mooring, Storage and Return to Service","Water/Waste","Rotor Flight Controls","Communications"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond à l’oxygène (Oxygen) ?", "choices": ["ATA 75","ATA 11","ATA 35","ATA 07"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 63 ?", "choices": ["Towing and Taxiing","Air","Rotor Drive System","Standard Practices - Rotor/Propellers"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au Rotor Drive System (système d’entraînement du rotor) ?", "choices": ["ATA 33","ATA 63","ATA 47","ATA 21"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 35 ?", "choices": ["Electrical/Electronic Panels and Multipurpose Components","Cargo and Accessory Compartments","Oxygen","Stabilizers"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 25 ?", "choices": ["Equipment / Furnishings","Cargo and Accessory Compartments","Tail Rotor","Standard Practices - Rotor/Propellers"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond aux panneaux/équipements électroniques multiprises (Electrical/Electronic Panels and Multipurpose Components) ?", "choices": ["ATA 11","ATA 48","ATA 39","ATA 25"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond à l’injection d’eau moteur (Engine Water Injection) ?", "choices": ["ATA 22","ATA 49","ATA 29","ATA 82"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 22 ?", "choices": ["Diagnostic and Maintenance System","Autoflight","Nitrogen Generation System","Water Ballast"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 52 ?", "choices": ["Autoflight","In-Flight Fuel Dispensing","Doors","Oil"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond aux hélices (Propellers) ?", "choices": ["ATA 42","ATA 11","ATA 76","ATA 61"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 07 ?", "choices": ["Oxygen","Water/Waste","Lifting and Shoring","Cargo and Accessory Compartments"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au carburant (Fuel) ?", "choices": ["ATA 22","ATA 28","ATA 70","ATA 57"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 20 ?", "choices": ["Flight Test Installation","Starting","Standard Practices - Airframe","Servicing - Routine Maintenance"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond à l’entretien courant (Servicing - Routine Maintenance) ?", "choices": ["ATA 45","ATA 12","ATA 56","ATA 73"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 18 ?", "choices": ["Pneumatic","Diagnostic and Maintenance System","Helicopter Vibration","Nitrogen Generation System"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 56 ?", "choices": ["Turbines (Reciprocating Engines)","Windows","Flight Test Installation","Blades & Pylons Folding Device"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 31 ?", "choices": ["Cargo and Accessory Compartments","Wings","Indicating / Recording System","Communications"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 80 ?", "choices": ["Fuselage","Cabin Systems","Accessory Gearboxes","Starting"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 48 ?", "choices": ["In-Flight Fuel Dispensing","Electrical Power","Oil","Airborne Auxiliary Power"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 89 ?", "choices": ["Towing and Taxiing","Flight Test Installation","Standard Practices - Rotor/Propellers","Hydraulic Power"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 43 ?", "choices": ["Ignition","Water Ballast","Information Systems","Emergency Solar Panel System"], "answer": 3 },
+  { "q": "Quel chapitre ATA correspond aux boîtes d’accessoires (Accessory Gearboxes) ?", "choices": ["ATA 74","ATA 83","ATA 46","ATA 75"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 81 ?", "choices": ["Integrated Modular Avionics","Rotor Flight Controls","Parking, Mooring, Storage and Return to Service","Turbines (Reciprocating Engines)"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 30 ?", "choices": ["Time Limits / Maintenance Checks","Information Systems","Ice and Rain Protection","Parking, Mooring, Storage and Return to Service"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au vide (Vacuum) ?", "choices": ["ATA 78","ATA 54","ATA 37","ATA 08"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 08 ?", "choices": ["Accessory Gearboxes","Blades & Pylons Folding Device","Leveling and Weighing","Water/Waste"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au train d’atterrissage (Landing Gear) ?", "choices": ["ATA 74","ATA 25","ATA 30","ATA 32"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 05 ?", "choices": ["Cargo and Accessory Compartments","Wings","Placards and Markings","Time Limits / Maintenance Checks"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 79 ?", "choices": ["Doors","Water Ballast","Oil","Tail Rotor"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 38 ?", "choices": ["Accessory Gearboxes","Water/Waste","Engine","Lights"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 83 ?", "choices": ["Standard Practices - Rotor/Propellers","Accessory Gearboxes","Indicating / Recording System","In-Flight Fuel Dispensing"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 73 ?", "choices": ["Diagnostic and Maintenance System","Doors","Rotor Drive System","Engine - Fuel and Control"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 57 ?", "choices": ["Engine","Hydraulic Power","Wings","Air"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 33 ?", "choices": ["Standard Practices - Rotor/Propellers","Hardware","Lights","Integrated Modular Avionics"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au démarrage (Starting) ?", "choices": ["ATA 73","ATA 44","ATA 80","ATA 67"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 42 ?", "choices": ["Tail Rotor","In-Flight Fuel Dispensing","Integrated Modular Avionics","Doors"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 55 ?", "choices": ["Towing and Taxiing","Emergency Solar Panel System","Indicating / Recording System","Stabilizers"], "answer": 3 },
+  { "q": "Quel chapitre ATA correspond aux pratiques standard cellule (Standard Practices - Airframe) ?", "choices": ["ATA 20","ATA 46","ATA 72","ATA 42"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 76 ?", "choices": ["Stabilizers","Engine Controls","Rotor Flight Controls","Blades & Pylons Folding Device"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 11 ?", "choices": ["Ice and Rain Protection","Placards and Markings","Time Limits / Maintenance Checks","Engine - Fuel and Control"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 54 ?", "choices": ["Dimensions and Areas","Standard Practices - Airframe","Nacelles/Pylons","Placards and Markings"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 26 ?", "choices": ["Flight Controls","Fire Protection","Hydraulic Power","Electrical/Electronic Panels and Multipurpose Components"], "answer": 1 },
+  { "q": "Quel chapitre ATA correspond au dispositif de repli des pales/pylônes (Blades & Pylons Folding Device) ?", "choices": ["ATA 66","ATA 70","ATA 81","ATA 31"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 51 ?", "choices": ["Starting","Accessory Gearboxes","Standard Practices and Structures - General","Tail Rotor"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond aux commandes moteur (Engine Controls) ?", "choices": ["ATA 53","ATA 79","ATA 14","ATA 76"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 23 ?", "choices": ["Communications","Engine Indicating","Standard Practices - Engines","Leveling and Weighing"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 24 ?", "choices": ["Ignition","Emergency Solar Panel System","Engine Water Injection","Electrical Power"], "answer": 3 },
+  { "q": "Quel chapitre ATA correspond au groupe auxiliaire de puissance (Airborne Auxiliary Power) ?", "choices": ["ATA 06","ATA 49","ATA 83","ATA 48"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 12 ?", "choices": ["Time Limits / Maintenance Checks","Servicing - Routine Maintenance","Ice and Rain Protection","Engine Water Injection"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 70 ?", "choices": ["Hydraulic Power","Power Plant","Blades & Pylons Folding Device","Standard Practices - Engines"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 32 ?", "choices": ["Servicing - Routine Maintenance","Landing Gear","Standard Practices and Structures - General","Placards and Markings"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 39 ?", "choices": ["Airborne Auxiliary Power","Electrical/Electronic Panels and Multipurpose Components","Dimensions and Areas","Engine Water Injection"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 14 ?", "choices": ["Hardware","Rotors","Propellers","Time Limits / Maintenance Checks"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond aux rotors (Rotors) ?", "choices": ["ATA 39","ATA 62","ATA 77","ATA 75"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 61 ?", "choices": ["Engine Indicating","Oil","Integrated Modular Avionics","Propellers"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 82 ?", "choices": ["Cargo and Accessory Compartments","Helicopter Vibration","Engine","Engine Water Injection"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 67 ?", "choices": ["Electrical/Electronic Panels and Multipurpose Components","Cargo and Accessory Compartments","Rotor Flight Controls","Emergency Solar Panel System"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 09 ?", "choices": ["Towing and Taxiing","Vacuum","Engine Indicating","Information Systems"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 27 ?", "choices": ["Indicating / Recording System","Cabin Systems","Flight Controls","Engine Water Injection"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au groupe motopropulseur (Power Plant) ?", "choices": ["ATA 71","ATA 75","ATA 49","ATA 57"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 74 ?", "choices": ["Electrical/Electronic Panels and Multipurpose Components","Hydraulic Power","Ignition","Indicating / Recording System"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 06 ?", "choices": ["Standard Practices - Airframe","Starting","Dimensions and Areas","Nitrogen Generation System"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond aux équipements/aménagements (Equipment / Furnishings) ?", "choices": ["ATA 42","ATA 08","ATA 25","ATA 10"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond à la protection contre le givre/pluie (Ice and Rain Protection) ?", "choices": ["ATA 20","ATA 30","ATA 48","ATA 38"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 36 ?", "choices": ["Air","Pneumatic","Integrated Modular Avionics","Helicopter Vibration"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 47 ?", "choices": ["Tail Rotor","Exhaust & Thrust Reverser","Nitrogen Generation System","Rotors"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 66 ?", "choices": ["Blades & Pylons Folding Device","Windows","Hardware","Standard Practices - Engines"], "answer": 0 },
+  { "q": "À quoi correspond l’ATA 41 ?", "choices": ["Servicing - Routine Maintenance","Water Ballast","Blades & Pylons Folding Device","Oxygen"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 46 ?", "choices": ["Pneumatic","Helicopter Vibration","Information Systems","Accessory Gearboxes"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond aux limites de temps/visites (Time Limits / Maintenance Checks) ?", "choices": ["ATA 35","ATA 89","ATA 05","ATA 63"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au remisage/amarre/retour en service (Parking, Mooring, Storage and Return to Service) ?", "choices": ["ATA 41","ATA 75","ATA 26","ATA 10"], "answer": 3 },
+  { "q": "Quel chapitre ATA correspond au pneumatique (Pneumatic) ?", "choices": ["ATA 60","ATA 36","ATA 43","ATA 74"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 72 ?", "choices": ["Ignition","Engine","Standard Practices - Engines","Pneumatic"], "answer": 1 },
+  { "q": "Quel chapitre ATA correspond à l’indication moteur (Engine Indicating) ?", "choices": ["ATA 89","ATA 66","ATA 77","ATA 26"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 34 ?", "choices": ["Air Conditioning and Pressurization","Tail Rotor","Navigation","Servicing - Routine Maintenance"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 64 ?", "choices": ["Fire Protection","Communications","Emergency Solar Panel System","Tail Rotor"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 62 ?", "choices": ["Water/Waste","Time Limits / Maintenance Checks","Vacuum","Rotors"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 78 ?", "choices": ["Water Ballast","Exhaust & Thrust Reverser","Autoflight","Stabilizers"], "answer": 1 },
+  { "q": "Quel chapitre ATA correspond aux plaques et marquages (Placards and Markings) ?", "choices": ["ATA 11","ATA 61","ATA 52","ATA 44"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond aux systèmes d’information (Information Systems) ?", "choices": ["ATA 24","ATA 51","ATA 33","ATA 46"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 60 ?", "choices": ["Engine Indicating","Engine Controls","Standard Practices - Rotor/Propellers","Pneumatic"], "answer": 2 },
+  { "q": "À quoi correspond l’ATA 49 ?", "choices": ["Engine Indicating","Hardware","Airborne Auxiliary Power","Flight Test Installation"], "answer": 2 },
+  { "q": "Quel chapitre ATA correspond au ballast d’eau (Water Ballast) ?", "choices": ["ATA 41","ATA 44","ATA 36","ATA 56"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond aux dimensions et surfaces (Dimensions and Areas) ?", "choices": ["ATA 06","ATA 25","ATA 11","ATA 55"], "answer": 0 },
+  { "q": "Quel chapitre ATA correspond aux vibrations hélicoptère (Helicopter Vibration) ?", "choices": ["ATA 61","ATA 18","ATA 54","ATA 46"], "answer": 1 },
+  { "q": "À quoi correspond l’ATA 65 ?", "choices": ["Water Ballast","Vacuum","Electrical Power","Tail Rotor Drive System"], "answer": 3 },
+  { "q": "À quoi correspond l’ATA 53 ?", "choices": ["Electrical/Electronic Panels and Multipurpose Components","Fuselage","Turbines (Reciprocating Engines)","Engine Indicating"], "answer": 1 },
+  { "q": "À quoi correspond l’acronyme AMM ?", "choices": ["Aircraft Maintenance Manual", "Advanced Muffin Manual", "Airframe Magic Methods", "Aerospace Meme Museum"], "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme IPC ?", 
+    "choices": ["Illustrated Parts Catalog", "Integrated Pizza Controller", "In-Plane Connector", "Issuable Parts Certificate"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme TSM ?", 
+    "choices": ["Trouble Shooting Manual", "Thrust Synchronization Module", "Total Safety Manifesto", "Turbojet Snack Menu"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme CMM ?", 
+    "choices": ["Component Maintenance Manual", "Composite Mending Matrix", "Cabin Mood Manager", "Checklist of Mandatory Memes"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme WDM ?", 
+    "choices": ["Wiring Diagram Manual", "Wing De-Icing Map", "Weight & Drag Matrix", "Wi-Fi Deployment Manual"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme SRM ?", 
+    "choices": ["Structural Repair Manual", "Service Readiness Map", "Stability Reference Model", "Snack Refill Manifest"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme AFM-2 ?", 
+    "choices": ["Airplane Flight Manual", "Auxiliary Fuel Management", "Aerodynamic Factors Matrix", "Auto-Feathering Mode 2"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme AOM ?", 
+    "choices": ["Aeroplane Operating Manual", "Avionics Operations Map", "Auxiliary Operations Memorandum", "Aisle Obstacle Manual"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme CLM ?", 
+    "choices": ["Cargo Loading Manual", "Cabin Luggage Manifest", "Center of Lift Mapper", "Cargo Logistics Matrix"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme MELP ?", 
+    "choices": ["Minimum Equipment List Procedures", "Maintenance Error Log Processor", "Modular Engine Limiter Program", "Mega Epic Landing Procedures"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme MMEL ?", 
+    "choices": ["Master Minimum Equipment List", "Main Maintenance Events Log", "Modular Manual of Engineering Limits", "Multi-Mission Equipment Ledger"], 
+    "answer": 0 },
+
+  { "q": "À quoi correspond l’acronyme QRH ?", 
+    "choices": ["Quick Reference Handbook", "Quiet Ride Handbook", "Quick Restart Helper", "Qualified Repairs Handbook"], 
+    "answer": 0 }
+  ];
+
+  // ——— DOM ———
+  const $ = s => document.querySelector(s);
+  const qEl = $('#question');
+  const choicesEl = $('#choices');
+  const feedbackEl = $('#feedback');
+  const progressEl = $('#progress');
+  const scoreEl = $('#score');
+  const timerEl = $('#timer');
+  const playPauseBtn = $('#playPauseBtn');
+  const stopRestartBtn = $('#stopRestartBtn');
+
+  // ——— État ———
+  let i = 0, score = 0;
+  let running = false; // partie en cours ?
+  let paused = false;  // pause utilisateur ?
+  let inPause = false; // phase « pause 3s » entre questions
+  const QUESTION_TIME = 7; // s/question
+  const PAUSE_TIME = 1;    // s après réponse ou time-out
+
+  let timeLeft = QUESTION_TIME;
+  let tickHandle = null;   // interval du timer de question
+  let pauseHandle = null;  // interval de la pause 3s
+  let pauseLeft = PAUSE_TIME;
+
+  // —— Scores (localStorage) ——
+  const pseudoInput = document.getElementById('pseudoInput');
+  const pseudoBtn = document.getElementById('pseudoBtn');
+  const tableBody = document.querySelector('#scoreTable tbody');
+  const clearScoresBtn = document.getElementById('clearScores');
+  const LS_KEY_SCORES = 'qcmScores_v1';
+  const LS_KEY_PSEUDO = 'qcmPseudo_v1';
+
+  function loadScores(){ try{ return JSON.parse(localStorage.getItem(LS_KEY_SCORES)||'[]'); }catch{ return []; } }
+  function saveScores(list){ localStorage.setItem(LS_KEY_SCORES, JSON.stringify(list.slice(0,100))); }
+  function renderScores(){
+    const list = loadScores();
+    tableBody.innerHTML = '';
+    list.forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${idx+1}</td><td>${row.name||'Anonyme'}</td><td>${row.score}</td><td>${row.total}</td><td>${row.when}</td>`;
+      tableBody.appendChild(tr);
+    });
+  }
+  function addScore(entry){
+    const list = loadScores();
+    list.unshift(entry);
+    list.sort((a,b)=> b.score - a.score || (new Date(b.ts)-new Date(a.ts)));
+    saveScores(list);
+    renderScores();
+  }
+  clearScoresBtn.addEventListener('click', ()=>{
+    localStorage.removeItem(LS_KEY_SCORES);
+    renderScores();
+  });
+
+  const savedPseudo = localStorage.getItem(LS_KEY_PSEUDO);
+  if(savedPseudo){ pseudoInput.value = savedPseudo; }
+  pseudoBtn.addEventListener('click', () => {
+    const val = (pseudoInput.value || '').trim().slice(0,20) || 'Anonyme';
+    pseudoInput.value = val;
+    localStorage.setItem(LS_KEY_PSEUDO, val);
+    pseudoBtn.textContent = 'OK';
+    setTimeout(()=> pseudoBtn.textContent = 'Définir', 800);
+  });
+
+  function recordFinalScore(){
+    const name = (pseudoInput.value || '').trim() || 'Anonyme';
+    const now = new Date();
+    addScore({ name, score, total: QUESTIONS.length, when: now.toLocaleString('fr-FR'), ts: now.toISOString() });
+  }
+
+  // ——— Timer utilitaires ———
+  function setTimerDisplay(v){ timerEl.textContent = `⏱️ ${v}s`; }
+  function clearTick(){ if(tickHandle){ clearInterval(tickHandle); tickHandle=null; } }
+  function clearPause(){ if(pauseHandle){ clearInterval(pauseHandle); pauseHandle=null; } }
+
+  // ——— Rendu ———
+  function render(){
+    const total = QUESTIONS.length;
+    if(i >= total){
+      qEl.textContent = 'Terminé !';
+      choicesEl.innerHTML = '';
+      feedbackEl.innerHTML = `<b>Résultat :</b> ${score}/${total}`;
+      progressEl.textContent = `Question ${total}/${total}`;
+      clearTick(); clearPause();
+      setTimerDisplay(0);
+      recordFinalScore();
+      running = false; paused = false; inPause = false;
+      playPauseBtn.textContent = 'Start';
+      stopRestartBtn.textContent = 'Recommencer';
+      return;
+    }
+
+    const {q, choices} = QUESTIONS[i];
+    qEl.textContent = q;
+    progressEl.textContent = `Question ${i+1}/${total}`;
+    scoreEl.textContent = `Score : ${score}`;
+    feedbackEl.textContent = '';
+
+    choicesEl.innerHTML = '';
+    choices.forEach((label, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'opt';
+      btn.textContent = label;
+      btn.addEventListener('click', () => onSelect(idx, btn));
+      choicesEl.appendChild(btn);
+    });
+
+    // réinit timer question
+    timeLeft = QUESTION_TIME;
+    setTimerDisplay(timeLeft);
+    if(running && !paused){ startQuestionTimer(); }
+  }
+
+  // ——— Timer question ———
+  function startQuestionTimer(){
+    clearTick();
+    inPause = false;
+    tickHandle = setInterval(()=>{
+      if(paused) return;
+      timeLeft -= 1;
+      setTimerDisplay(Math.max(0,timeLeft));
+      if(timeLeft <= 0){
+        clearTick();
+        showTimeoutFeedback();
+        startPauseThenNext();
+      }
+    },1000);
+  }
+
+  function highlightGood(){
+    const good = QUESTIONS[i].answer;
+    document.querySelectorAll('.opt').forEach((b, idx) => {
+      b.disabled = true;
+      if(idx === good) b.classList.add('correct');
+    });
+  }
+  function showTimeoutFeedback(){
+    highlightGood();
+    feedbackEl.innerHTML = '<span class="muted"><b>Temps écoulé.</b></span>';
+  }
+
+  // ——— Sélection d’une réponse ———
+  function onSelect(idx, btn){
+    
+	if(!running || paused || inPause) return;
+    clearTick();
+    const good = QUESTIONS[i].answer;
+
+    highlightGood();
+    if(idx === good){
+      score++;
+      scoreEl.textContent = `Score : ${score}`;
+      feedbackEl.innerHTML = '<span style="color: var(--ok)"><b>Bonne réponse !</b></span>';
+    } else {
+      btn.classList.add('wrong');
+      feedbackEl.innerHTML = '<span style="color: var(--bad)"><b>Faux.</b></span>';
+    }
+    startPauseThenNext();
+  }
+
+  // ——— Pause 3s puis question suivante ———
+  function startPauseThenNext(){
+    clearPause();
+    inPause = true;
+    let left = PAUSE_TIME;
+    setTimerDisplay(left);
+    pauseHandle = setInterval(()=>{
+      if(paused) return;
+      left -= 1;
+      setTimerDisplay(Math.max(0,left));
+      if(left <= 0){
+        clearPause();
+        inPause = false;
+        i++;
+        render();
+      }
+    },1000);
+  }
+
+  // ——— Start / Pause & Stop / Recommencer ———
+  playPauseBtn.addEventListener('click', ()=>{
+    // Mélange l’ordre des questions au début de chaque partie
+	QUESTIONS = QUESTIONS
+	.map(q => ({ sort: Math.random(), value: q }))
+	.sort((a, b) => a.sort - b.sort)
+	.map(q => q.value);
+	if(!running){
+      // démarrer
+      running = true; paused = false;
+      if(i >= QUESTIONS.length){ i = 0; score = 0; }
+      if(choicesEl.children.length === 0) render();
+      playPauseBtn.textContent = 'Pause';
+      stopRestartBtn.textContent = 'Stop';
+      if(inPause) startPauseThenNext(); else startQuestionTimer();
+    } else if(!paused){
+      // mettre en pause
+      paused = true;
+      clearTick(); clearPause(); // gèle tout
+      playPauseBtn.textContent = 'Start';
+    } else {
+      // reprendre
+      paused = false;
+      playPauseBtn.textContent = 'Pause';
+      if(inPause) startPauseThenNext(); else startQuestionTimer();
+    }
+  });
+
+  stopRestartBtn.addEventListener('click', ()=>{
+    if(stopRestartBtn.textContent === 'Stop'){
+      // —— Stop = finir la partie et ENREGISTRER le score —— //
+      running = false; paused = false; inPause = false;
+      clearTick(); clearPause();
+      // marque terminé + sauvegarde score
+      recordFinalScore();
+      progressEl.textContent = `Question ${QUESTIONS.length}/${QUESTIONS.length}`;
+      qEl.textContent = 'Terminé !';
+      choicesEl.innerHTML = '';
+      feedbackEl.innerHTML = `<b>Résultat :</b> ${score}/${QUESTIONS.length}`;
+      setTimerDisplay(0);
+      i = QUESTIONS.length; // état fini
+      playPauseBtn.textContent = 'Start';
+      stopRestartBtn.textContent = 'Recommencer';
+    } else {
+      // recommencer (reset, en attente de Start)
+      i = 0; score = 0; running = false; paused = false; inPause = false;
+      clearTick(); clearPause();
+      progressEl.textContent = `Question 0/${QUESTIONS.length}`;
+      scoreEl.textContent = `Score : 0`;
+      qEl.textContent = 'Clique sur Start pour commencer';
+      choicesEl.innerHTML = '';
+      feedbackEl.textContent = '';
+      setTimerDisplay(QUESTION_TIME);
+      playPauseBtn.textContent = 'Start';
+      stopRestartBtn.textContent = 'Stop';
+    }
+  });
+
+  // ——— Import / Export ———
+  const importBtn = document.getElementById('importBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const fileInput  = document.getElementById('fileInput');
+
+  function download(name, text){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+    a.download = name; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 800);
+  }
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function timestamp(){
+    const d=new Date();
+    return `${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+  }
+
+  exportBtn.addEventListener('click', ()=>{
+    download(`qcm_questions_${timestamp()}.json`, JSON.stringify(QUESTIONS, null, 2));
+  });
+
+  importBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    const txt = await file.text();
+    try{
+      let data;
+      const lower = file.name.toLowerCase();
+      if(lower.endsWith('.json')){
+        data = JSON.parse(txt);
+      } else if(lower.endsWith('.csv') || lower.endsWith('.txt')){
+        data = parseCSV(txt);
+      } else {
+        alert('Format non reconnu. Utilise .json, .csv ou .txt');
+        return;
+      }
+      const normalized = normalizeToQuestions(data);
+      if(!Array.isArray(normalized) || normalized.length === 0) throw new Error('Aucune question trouvée');
+
+      // Remplace la banque de questions et réinitialise sans démarrer
+      QUESTIONS = normalized;
+      i = 0; score = 0; running = false; paused = false; inPause = false;
+      clearTick(); clearPause();
+      progressEl.textContent = `Question 0/${QUESTIONS.length}`;
+      scoreEl.textContent = `Score : 0`;
+      qEl.textContent = 'Clique sur Start pour commencer';
+      choicesEl.innerHTML = '';
+      feedbackEl.textContent = '';
+      setTimerDisplay(QUESTION_TIME);
+      playPauseBtn.textContent = 'Start';
+      stopRestartBtn.textContent = 'Stop';
+      alert(`Import réussi : ${QUESTIONS.length} questions chargées.`);
+    } catch(err){
+      console.error(err);
+      alert("Échec de l'import : " + (err.message || err));
+    } finally {
+      fileInput.value = '';
+    }
+  });
+
+  // CSV/TXT attendu : q,c1,c2,c3,c4,answer  (answer = index 0..3 ou texte exact)
+  function parseCSV(text){
+    const rows = text.split(/\r?\n/).map(r=>r.trim()).filter(Boolean);
+    if(!rows.length) return [];
+    if(/^q(,|;|\t)/i.test(rows[0])) rows.shift(); // ignore header
+    return rows.map(line=>{
+      const parts = line.split(/[,;\t]/).map(s=>s.trim());
+      const [q, c1, c2, c3, c4, ans] = parts;
+      const choices = [c1,c2,c3,c4].filter(v=>v!==undefined && v!=='');
+      let answer;
+      if(ans === undefined) answer = 0;
+      else if(/^\d+$/.test(ans)) answer = parseInt(ans,10);
+      else {
+        const idx = choices.findIndex(x => String(x).toLowerCase() === String(ans).toLowerCase());
+        answer = idx >= 0 ? idx : 0;
+      }
+      if(answer < 0) answer = 0;
+      return { q, choices, answer };
+    });
+  }
+
+  // Normalise vers { q, choices:[..], answer }
+  function normalizeToQuestions(raw){
+    if(!Array.isArray(raw)) throw new Error('Structure inconnue');
+    return raw.map((it, idx)=>{
+      if(typeof it === 'string') throw new Error("Ligne invalide à l'index " + idx);
+      const q = it.q || it.question || `Question ${idx+1}`;
+      const choices = it.choices || it.reponses || it.answers || [];
+      let answer = it.answer ?? it.bonne ?? 0;
+      if(typeof answer === 'string'){
+        const k = choices.findIndex(c => String(c).toLowerCase() === answer.toLowerCase());
+        answer = k>=0 ? k : 0;
+      }
+      return { q, choices: Array.from(choices).slice(0,4), answer: Number(answer) || 0 };
+    });
+  }
+
+  // État initial (avant démarrage)
+  progressEl.textContent = `Question 0/${QUESTIONS.length}`;
+  scoreEl.textContent = `Score : 0`;
+  qEl.textContent = 'Clique sur Start pour commencer';
+  setTimerDisplay(QUESTION_TIME);
+  renderScores();
+  </script>
+</body>
+</html>
